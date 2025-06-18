@@ -30,12 +30,12 @@
 #include "platform.h"
 #include "eeprom.h"
 #include "grbl_eeprom_extensions.h"
-#include "grbl/hal.h"
-#include "grbl/report.h"
-#include "grbl/protocol.h"
-#include "grbl/protocol.h"
-#include "grbl/nvs_buffer.h"
-#include "grbl/state_machine.h"
+#include "hal.h"
+#include "report.h"
+#include "protocol.h"
+#include "protocol.h"
+#include "nvs_buffer.h"
+#include "state_machine.h"
 
 typedef struct arg_vars {
     // Output file handles

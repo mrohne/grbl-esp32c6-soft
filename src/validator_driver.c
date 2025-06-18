@@ -27,7 +27,7 @@
 #include "grbl_eeprom_extensions.h"
 #include "platform.h"
 
-#include "grbl/hal.h"
+#include "hal.h"
 
 spindle_id_t spindle_id;
 

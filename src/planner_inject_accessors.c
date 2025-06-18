@@ -1,4 +1,4 @@
-#include "grbl/hal.h"
+#include "hal.h"
 
 static plan_block_t block_buffer[INJECT_BLOCK_BUFFER_SIZE];  // A ring buffer for motion instructions
 plan_block_t *get_block_buffer() { return block_buffer; }

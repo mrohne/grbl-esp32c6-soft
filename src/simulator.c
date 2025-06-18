@@ -33,7 +33,7 @@
 #include "mcu.h"
 #include "driver.h"
 
-#include "grbl/grbl.h"
+#include "grbl.h"
 
 void sim_nop (void)
 {

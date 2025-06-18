@@ -41,7 +41,7 @@
 #include "eeprom.h"
 #include "grbl_interface.h"
 
-#include "grbl/grbllib.h"
+#include "grbllib.h"
 
 arg_vars_t args;
 const char* progname;

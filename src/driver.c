@@ -28,7 +28,7 @@
 #include "grbl_eeprom_extensions.h"
 #include "platform.h"
 
-#include "grbl/hal.h"
+#include "hal.h"
 
 #ifndef SQUARING_ENABLED
 #define SQUARING_ENABLED 0

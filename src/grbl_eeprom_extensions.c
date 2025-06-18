@@ -23,8 +23,8 @@
 
 #include "eeprom.h"
 
-#include "grbl/hal.h"
-#include "grbl/crc.h"
+#include "hal.h"
+#include "crc.h"
 
 bool memcpy_to_eeprom(uint32_t destination, uint8_t *source, uint32_t size, bool with_checksum)
 {
