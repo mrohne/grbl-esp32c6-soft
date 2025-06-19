@@ -53,11 +53,7 @@ typedef struct
 {
     volatile bool enable;
     bool irq_enable;
-    uint32_t value;
-    uint32_t load;
-    uint32_t prescale;
-    uint32_t prescaler;
-    uint32_t compare;
+    int fd;
 } mcu_timer_t;
 
 typedef struct
@@ -109,6 +105,9 @@ typedef void (*interrupt_handler)(void);
 void mcu_reset (void);
 void mcu_enable_interrupts (void);
 void mcu_disable_interrupts (void);
+void mcu_timer_set(mcu_timer_t *timer, uint32_t load);
+void mcu_timer_start(mcu_timer_t *timer);
+void mcu_timer_stop(mcu_timer_t *timer);
 void mcu_master_clock (void);
 void mcu_register_irq_handler (interrupt_handler handler, irq_num_t irq_num);
 void mcu_gpio_set (gpio_port_t *port, uint8_t pins, uint8_t mask);
@@ -118,3 +117,10 @@ void mcu_gpio_toggle_in (gpio_port_t *port, uint8_t pin);
 void simulate_serial (void);
 
 #endif
+
+/*
+Local Variables:
+c-basic-offset: 4
+indent-tabs-mode: nil
+End:
+*/

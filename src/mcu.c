@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <sys/timerfd.h>
+
 #include "mcu.h"
 #include "simulator.h"
 #include "hal.h"
@@ -31,10 +33,10 @@ static volatile bool irq_enable = false;
 static bool booted = false;
 static interrupt_handler isr[IRQ_N_HANDLERS];
 
-mcu_uart_t uart;
 mcu_timer_t timer[MCU_N_TIMERS];
 mcu_timer_t systick_timer;
 gpio_port_t gpio[MCU_N_GPIO];
+mcu_uart_t uart;
 
 static void default_handler (void)
 {
@@ -50,10 +52,15 @@ void mcu_reset (void)
     for(i = 0; i < IRQ_N_HANDLERS; i++)
         isr[i] = default_handler;
 
-    memset(&uart, 0, sizeof(mcu_uart_t));
-    memset(&timer, 0, sizeof(mcu_timer_t) * MCU_N_TIMERS);
     memset(&systick_timer, 0, sizeof(mcu_timer_t));
+    systick_timer = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+
+    memset(&timer, 0, sizeof(mcu_timer_t) * MCU_N_TIMERS);
+    for (i = 0; i < MCU_N_TIMERS; i++) 
+      timer[i].fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+
     memset(&gpio, 0, sizeof(gpio_port_t) * MCU_N_GPIO);
+    memset(&uart, 0, sizeof(mcu_uart_t));
 
     irq_enable = true;
     booted = true;
@@ -74,6 +81,33 @@ void mcu_disable_interrupts (void)
     irq_enable = false;
 }
 
+void mcu_timer_set(mcu_timer_t *timer, uint32_t load)
+{
+    struct itimerspec new_value;
+    memset(&new_value, 0, sizeof(new_value));
+    new_value.it_interval.tv_sec = load * (1.0e0 / F_CPU);
+    new_value.it_interval.tv_nsec = load * (1.0e9 / F_CPU);
+    timerfd_settime(timer->fd, 0, &new_value, NULL);
+}
+
+void mcu_timer_start(mcu_timer_t *timer)
+{
+    struct itimerspec new_value;
+    timerfd_gettime(timer->fd, 0, &new_value);
+    new_value.it_value.tv_sec = new_value.it_interval.tv_sec;
+    new_value.it_value.tv_nsec = new_value.it_interval.tv_nsec;
+    timerfd_settime(timer->fd, 0, &new_value, NULL);
+}
+
+void mcu_timer_stop(mcu_timer_t *timer)
+{
+    struct itimerspec new_value;
+    timerfd_gettime(timer->fd, 0, &new_value);
+    new_value.it_value.tv_sec = 0;
+    new_value.it_value.tv_nsec = 0;
+    timerfd_settime(timer->fd, 0, &new_value, NULL);
+}
+
 void mcu_master_clock (void)
 {
     uint_fast8_t i;
@@ -81,56 +115,43 @@ void mcu_master_clock (void)
     if(!booted)
         return;
 
-    for(i = 0; i < MCU_N_TIMERS; i++) {
-
-        if(timer[i].enable) {
-
-            if(timer[i].prescaler) {
-                if(timer[i].prescale == 0)
-                    timer[i].prescale = timer[i].prescaler;
-                else {
-                    if(--timer[i].prescale != 0)
-                        continue;
-                    else
-                        timer[i].prescale = timer[i].prescaler;
-                }
-            }
-
-            if(timer[i].value == 0)
-                timer[i].value = timer[i].load;
-            else if(--timer[i].value == 0) {
-                if(timer[i].irq_enable && irq_enable) {
-                    switch(i)
-                    {
-                        case 0:
-                            isr[Timer0_IRQ]();
-                            break;
-                        case 1:
-                            isr[Timer1_IRQ]();
-                            break;
-                        case 2:
-                            isr[Timer2_IRQ]();
-                            break;                    }
-                } 
-                timer[i].value = timer[i].load;
-            }
-        }
+    int max_fd;
+    fd_set read_fds;
+    FD_ZERO(&read_fds);
+    max_fd = 0;
+    if (systick_timer.enable) {
+        FD_SET(systick_timer.fd, &read_fds);
+        if (max_fd < systick_timer.fd) systick_timer.fd;
+    }
+    for (i = 0; i < MCU_N_TIMERS; i++) {
+        FD_SET(timer[i].fd, &read_fds);
+        if (max_fd < timer[i].fd) max_fd = timer[i].fd;
     }
 
+
+    select(max_fd + 1, &read_fs, 0, 0, 0);
+
+    if (FD_ISSET(systick_timer.fd, &read_fds)) {
+        uint64_t count;
+        read(systick_timer.fd,&count,sizeof(count));
+        if(systick_timer.irq_enable && irq_enable)
+            isr[Systick_IRQ]();
+    }
+
+    for (i = 0; i < MCU_N_TIMERS; i++) {
+        if (FD_ISSET(timer[i].fd, &read_fds)) {
+            uint64_t count;
+            read(timer[i].fd,&count,sizeof(count));
+            if(timer[i].irq_enable && irq_enable)
+                isr[Timer0_IRQ + i]();
+        }
+    }
+    
     for(i = 0; i < MCU_N_GPIO; i++) {
         if(gpio[i].irq_state.value & gpio[i].irq_mask.value)
             isr[GPIO0_IRQ + i]();
     }
 
-    if(systick_timer.enable) {
-        if(systick_timer.value == 0)
-            systick_timer.value = systick_timer.load;
-        else if(--systick_timer.value == 0) {
-            if(systick_timer.irq_enable && irq_enable)
-                isr[Systick_IRQ]();
-            systick_timer.value = systick_timer.load;
-        }
-    }
 }
 
 void mcu_gpio_set (gpio_port_t *port, uint8_t pins, uint8_t mask)
@@ -195,3 +216,10 @@ void simulate_serial (void)
         }
     }
 }
+
+/*
+Local Variables:
+c-basic-offset: 4
+indent-tabs-mode: nil
+End:
+*/

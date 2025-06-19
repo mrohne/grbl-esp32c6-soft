@@ -110,9 +110,7 @@ static void stepperEnable (axes_signals_t enable, bool hold)
 // Starts stepper driver ISR timer and forces a stepper driver interrupt callback
 static void stepperWakeUp (void)
 {
-    timer[STEPPER_TIMER].load = 5000;
-    timer[STEPPER_TIMER].value = 0;
-    timer[STEPPER_TIMER].enable = 1;
+    mcu_timer_start(&timer[STEPPER_TIMER]);
 
 //    hal.stepper_interrupt_callback();   // start the show
 }
@@ -120,9 +118,7 @@ static void stepperWakeUp (void)
 // Disables stepper driver interrupts
 static void stepperGoIdle (bool clear_signals)
 {
-    timer[STEPPER_TIMER].value = 0;
-    timer[STEPPER_TIMER].load = 0;
-    timer[STEPPER_TIMER].enable = 0;
+    mcu_timer_stop(&timer[STEPPER_TIMER]);
 
     if(clear_signals) {
         set_step_outputs((axes_signals_t){0});
@@ -133,9 +129,7 @@ static void stepperGoIdle (bool clear_signals)
 // Sets up stepper driver interrupt timeout, limiting the slowest speed
 static void stepperCyclesPerTick (uint32_t cycles_per_tick)
 {
-    timer[STEPPER_TIMER].load = cycles_per_tick;
-    timer[STEPPER_TIMER].value = 0;
-    timer[STEPPER_TIMER].enable = 1;
+    mcu_timer_set(&timer[STEPPER_TIMER], cycles_per_tick);
 }
 
 // "Normal" version: Sets stepper direction and pulse pins and starts a step pulse a few nanoseconds later.
@@ -370,8 +364,6 @@ void settings_changed (settings_t *settings, settings_changed_flags_t changed)
 
 bool driver_setup (settings_t *settings)
 {
-    timer[STEPPER_TIMER].prescaler = 0;
-    timer[STEPPER_TIMER].irq_enable = 1;
     mcu_register_irq_handler(Stepper_IRQHandler, Timer0_IRQ);
 
     gpio[STEPPER_ENABLE_PORT].dir.mask = AXES_BITMASK;
@@ -432,10 +424,7 @@ bool driver_init ()
     mcu_reset();
 
     mcu_register_irq_handler(SysTick_Handler, Systick_IRQ);
-
-    systick_timer.load = F_CPU / 1000 - 1;
-    systick_timer.irq_enable = 1;
-    systick_timer.enable = 1;
+    mcu_timer_set(&systick_timer, F_CPU / 1000 - 1);
 
     hal.info = "Simulator";
     hal.driver_version = "250328";
@@ -555,3 +544,10 @@ void SysTick_Handler (void)
         }
     }
 }
+
+/*
+Local Variables:
+c-basic-offset: 4
+indent-tabs-mode: nil
+End:
+*/
