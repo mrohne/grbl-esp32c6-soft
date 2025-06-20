@@ -57,9 +57,9 @@ void mcu_reset (void)
     memset(&uart, 0, sizeof(mcu_uart_t));
     memset(&timer, 0, sizeof(mcu_timer_t) * MCU_N_TIMERS);
     for (i = 0; i < MCU_N_TIMERS; i++) 
-      timer[i].fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+      timer[i].fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
     memset(&systick_timer, 0, sizeof(mcu_timer_t));
-    systick_timer.fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+    systick_timer.fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
     memset(&gpio, 0, sizeof(gpio_port_t) * MCU_N_GPIO);
 
     irq_enable = true;
@@ -124,13 +124,15 @@ void mcu_master_clock (void)
         if (max_fd < timer[i].fd) max_fd = timer[i].fd;
     }
     FD_SET(systick_timer.fd, &read_fds);
-    if (max_fd < systick_timer.fd) systick_timer.fd;
+    if (max_fd < systick_timer.fd) max_fd = systick_timer.fd;
 
     struct timespec timeout = {.tv_sec = 1, .tv_nsec = 0};
     if (pselect(max_fd + 1, &read_fds, NULL, NULL, &timeout, NULL) < 0) 
         perror("Error from pselect()");
 
+    struct itimerspec it;
     for (i = 0; i < MCU_N_TIMERS; i++) {
+        timerfd_gettime(timer[i].fd, &it);
         if (FD_ISSET(timer[i].fd, &read_fds)) {
             uint64_t count;
             if (read(timer[i].fd,&count,sizeof(count)) < 0)
@@ -140,6 +142,7 @@ void mcu_master_clock (void)
         }
     }
 
+    timerfd_gettime(timer[i].fd, &it);
     if (FD_ISSET(systick_timer.fd, &read_fds)) {
         uint64_t count;
         if (read(systick_timer.fd,&count,sizeof(count)) < 0)

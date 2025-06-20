@@ -110,6 +110,7 @@ static void stepperEnable (axes_signals_t enable, bool hold)
 // Starts stepper driver ISR timer and forces a stepper driver interrupt callback
 static void stepperWakeUp (void)
 {
+    mcu_timer_set(&timer[STEPPER_TIMER], 5000);
     mcu_timer_start(&timer[STEPPER_TIMER]);
 
 //    hal.stepper_interrupt_callback();   // start the show
