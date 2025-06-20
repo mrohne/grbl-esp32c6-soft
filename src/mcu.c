@@ -35,10 +35,10 @@ static volatile bool irq_enable = false;
 static bool booted = false;
 static interrupt_handler isr[IRQ_N_HANDLERS];
 
+mcu_uart_t uart;
 mcu_timer_t timer[MCU_N_TIMERS];
 mcu_timer_t systick_timer;
 gpio_port_t gpio[MCU_N_GPIO];
-mcu_uart_t uart;
 
 static void default_handler (void)
 {
@@ -54,15 +54,13 @@ void mcu_reset (void)
     for(i = 0; i < IRQ_N_HANDLERS; i++)
         isr[i] = default_handler;
 
-    memset(&systick_timer, 0, sizeof(mcu_timer_t));
-    systick_timer.fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
-
+    memset(&uart, 0, sizeof(mcu_uart_t));
     memset(&timer, 0, sizeof(mcu_timer_t) * MCU_N_TIMERS);
     for (i = 0; i < MCU_N_TIMERS; i++) 
       timer[i].fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
-
+    memset(&systick_timer, 0, sizeof(mcu_timer_t));
+    systick_timer.fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
     memset(&gpio, 0, sizeof(gpio_port_t) * MCU_N_GPIO);
-    memset(&uart, 0, sizeof(mcu_uart_t));
 
     irq_enable = true;
     booted = true;
@@ -120,26 +118,17 @@ void mcu_master_clock (void)
     fd_set read_fds;
     FD_ZERO(&read_fds);
     max_fd = 0;
-    if (systick_timer.enable) {
-        FD_SET(systick_timer.fd, &read_fds);
-        if (max_fd < systick_timer.fd) systick_timer.fd;
-    }
+
     for (i = 0; i < MCU_N_TIMERS; i++) {
         FD_SET(timer[i].fd, &read_fds);
         if (max_fd < timer[i].fd) max_fd = timer[i].fd;
     }
+    FD_SET(systick_timer.fd, &read_fds);
+    if (max_fd < systick_timer.fd) systick_timer.fd;
 
     struct timespec timeout = {.tv_sec = 1, .tv_nsec = 0};
     if (pselect(max_fd + 1, &read_fds, NULL, NULL, &timeout, NULL) < 0) 
         perror("Error from pselect()");
-
-    if (FD_ISSET(systick_timer.fd, &read_fds)) {
-        uint64_t count;
-        if (read(systick_timer.fd,&count,sizeof(count)) < 0)
-            perror("Error from read()");
-        if(systick_timer.irq_enable && irq_enable)
-            isr[Systick_IRQ]();
-    }
 
     for (i = 0; i < MCU_N_TIMERS; i++) {
         if (FD_ISSET(timer[i].fd, &read_fds)) {
@@ -150,12 +139,19 @@ void mcu_master_clock (void)
                 isr[Timer0_IRQ + i]();
         }
     }
-    
+
+    if (FD_ISSET(systick_timer.fd, &read_fds)) {
+        uint64_t count;
+        if (read(systick_timer.fd,&count,sizeof(count)) < 0)
+            perror("Error from read()");
+        if(systick_timer.irq_enable && irq_enable)
+            isr[Systick_IRQ]();
+    }
+
     for(i = 0; i < MCU_N_GPIO; i++) {
         if(gpio[i].irq_state.value & gpio[i].irq_mask.value)
             isr[GPIO0_IRQ + i]();
     }
-
 }
 
 void mcu_gpio_set (gpio_port_t *port, uint8_t pins, uint8_t mask)

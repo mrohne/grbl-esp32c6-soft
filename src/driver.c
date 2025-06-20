@@ -130,6 +130,7 @@ static void stepperGoIdle (bool clear_signals)
 static void stepperCyclesPerTick (uint32_t cycles_per_tick)
 {
     mcu_timer_set(&timer[STEPPER_TIMER], cycles_per_tick);
+    mcu_timer_start(&timer[STEPPER_TIMER]);
 }
 
 // "Normal" version: Sets stepper direction and pulse pins and starts a step pulse a few nanoseconds later.
