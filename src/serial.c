@@ -82,9 +82,6 @@ static bool serialPutC (const char c)
 {
     uint_fast16_t next_head;
 
-    // NOTE: If buffer and transmit register are empty buffering may be bypassed.
-    //       See actual drivers for examples.
-
     next_head = (txbuffer.head + 1) & (TX_BUFFER_SIZE - 1);     // Get and update head pointer
 
     while(txbuffer.tail == next_head) {                         // Buffer full, block until space is available...
@@ -195,3 +192,9 @@ static void uart_interrupt_handler (void)
         }
     }
 }
+/*
+Local Variables:
+c-basic-offset: 4
+indent-tabs-mode: nil
+End:
+*/

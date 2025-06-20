@@ -119,20 +119,25 @@ void mcu_master_clock (void)
     FD_ZERO(&read_fds);
     max_fd = 0;
 
+    FD_SET(systick_timer.fd, &read_fds);
+    if (max_fd < systick_timer.fd) max_fd = systick_timer.fd;
     for (i = 0; i < MCU_N_TIMERS; i++) {
         FD_SET(timer[i].fd, &read_fds);
         if (max_fd < timer[i].fd) max_fd = timer[i].fd;
     }
-    FD_SET(systick_timer.fd, &read_fds);
-    if (max_fd < systick_timer.fd) max_fd = systick_timer.fd;
 
     struct timespec timeout = {.tv_sec = 1, .tv_nsec = 0};
     if (pselect(max_fd + 1, &read_fds, NULL, NULL, &timeout, NULL) < 0) 
         perror("Error from pselect()");
 
-    struct itimerspec it;
+    if (FD_ISSET(systick_timer.fd, &read_fds)) {
+        uint64_t count;
+        if (read(systick_timer.fd,&count,sizeof(count)) < 0)
+            perror("Error from read()");
+        if(systick_timer.irq_enable && irq_enable)
+            isr[Systick_IRQ]();
+    }
     for (i = 0; i < MCU_N_TIMERS; i++) {
-        timerfd_gettime(timer[i].fd, &it);
         if (FD_ISSET(timer[i].fd, &read_fds)) {
             uint64_t count;
             if (read(timer[i].fd,&count,sizeof(count)) < 0)
@@ -142,18 +147,26 @@ void mcu_master_clock (void)
         }
     }
 
-    timerfd_gettime(timer[i].fd, &it);
-    if (FD_ISSET(systick_timer.fd, &read_fds)) {
-        uint64_t count;
-        if (read(systick_timer.fd,&count,sizeof(count)) < 0)
-            perror("Error from read()");
-        if(systick_timer.irq_enable && irq_enable)
-            isr[Systick_IRQ]();
-    }
-
     for(i = 0; i < MCU_N_GPIO; i++) {
         if(gpio[i].irq_state.value & gpio[i].irq_mask.value)
             isr[GPIO0_IRQ + i]();
+    }
+
+    if(uart.tx_flag) {
+        sim.putchar(uart.tx_data);
+        uart.tx_flag = 0;
+    }
+
+    if((uart.tx_irq = uart.tx_irq_enable))
+        isr[UART_IRQ]();
+
+    if(uart.rx_irq_enable && !uart.rx_irq && hal.stream.get_rx_buffer_free() > 100) {
+        uint8_t char_in = sim.getchar();
+        if (char_in) {
+            uart.rx_data = char_in;
+            uart.rx_irq = 1;
+            isr[UART_IRQ]();
+        }
     }
 }
 
@@ -194,30 +207,6 @@ void mcu_gpio_in (gpio_port_t *port, uint8_t pins, uint8_t mask)
     } while(changed);
 
     port->state.value = (port->state.value & ~mask) | pins;
-}
-
-// TODO: move to mcu_master_clock() above
-void simulate_serial (void)
-{
-    if(!booted)
-        return;
-
-    if(uart.tx_flag) {
-        sim.putchar(uart.tx_data);
-        uart.tx_flag = 0;
-    }
-
-    if((uart.tx_irq = uart.tx_irq_enable))
-        isr[UART_IRQ]();
-
-    if(uart.rx_irq_enable && !uart.rx_irq && hal.stream.get_rx_buffer_free() > 100) {
-        uint8_t char_in = sim.getchar();
-        if (char_in) {
-            uart.rx_data = char_in;
-            uart.rx_irq = 1;
-            isr[UART_IRQ]();
-        }
-    }
 }
 
 /*

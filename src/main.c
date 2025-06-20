@@ -87,34 +87,6 @@ PLAT_THREAD_FUNC(grbl_main_thread, exit)
     return 0; //NULL;
 }
 
-#ifdef WIN32
-
-//return char if one available.
-uint8_t sim_socket_in()
-{
-    char c = 0;
-    int retval;
-    DWORD t = 0;
-
-    if(sim.socket_fd == INVALID_SOCKET) {
-        sim.socket_fd = accept(socket_fd, NULL, NULL);
-        setsockopt(sim.socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&t, sizeof(t));
-        u_long mode = 1;
-        ioctlsocket(sim.socket_fd, FIONBIO, &mode); // set non-blocking
-    } else if((retval = recv(sim.socket_fd, &c, 1, 0)) < 1) {
-        if(retval == 0)
-            sim.socket_fd = INVALID_SOCKET;
-        else if((retval = WSAGetLastError()) != WSAEWOULDBLOCK) {
-            printf("Fatal: socket error %d\n", retval);
-            exit(-5);
-        }
-    }
-
-    return c;
-}
-
-#else
-
 //return char if one available.
 uint8_t sim_socket_in()
 {
@@ -160,15 +132,11 @@ uint8_t sim_socket_in()
                 FD_CLR(sim.socket_fd, &rfds);
                 sim.socket_fd = 0;
             }
-//            if(c && c != '?' && c >= ' ')
-//                sim_serial_out(c == '\r' ? '\n' : c);
         }
     }
 
     return c;
 }
-
-#endif
 
 static void exithandler (int signum)
 {
@@ -312,54 +280,6 @@ int main(int argc, char *argv[])
 
     if(args.port) {
 
-#ifdef WIN32
-        char port[10];
-        WSADATA wsaData;
-        struct addrinfo *result = NULL, *ptr = NULL, hints;
-
-        ZeroMemory(&hints, sizeof (hints));
-        hints.ai_family = AF_INET;
-        hints.ai_socktype = SOCK_STREAM;
-        hints.ai_protocol = IPPROTO_TCP;
-        hints.ai_flags = AI_PASSIVE;
-
-        if (WSAStartup(MAKEWORD(2,2), &wsaData) != 0) {
-            printf("Fatal: Unable to create socket.\n");
-            exit(-5);
-        }
-
-        if (getaddrinfo(NULL, itoa(args.port, port, 10), &hints, &result) != 0) {
-            WSACleanup();
-            printf("Fatal: Unable to create socket.\n");
-            exit(-5);
-        }
-
-        if ((socket_fd = socket(result->ai_family, result->ai_socktype, result->ai_protocol)) == INVALID_SOCKET) {
-            WSACleanup();
-            freeaddrinfo(result);
-            printf("Fatal: Unable to create socket.\n");
-            exit(-5);
-        }
-
-        if (bind(socket_fd, result->ai_addr, (int)result->ai_addrlen) == SOCKET_ERROR) {
-            freeaddrinfo(result);
-            closesocket(socket_fd);
-            WSACleanup();
-            printf("Fatal: Unable to bind socket.\n");
-            exit(-5);
-        }
-
-        freeaddrinfo(result);
-
-        if (listen(socket_fd, SOMAXCONN ) == SOCKET_ERROR ) {
-            closesocket(socket_fd);
-            WSACleanup();
-            exit(-5);
-        }
-        
-        sim.socket_fd = INVALID_SOCKET;
-#else
-
         socklen_t addrlen = sizeof(struct sockaddr_in);
         struct sockaddr_in server_addr = {0};
 
@@ -381,24 +301,7 @@ int main(int argc, char *argv[])
         FD_SET(socket_fd, &rfds);
 
         listen(socket_fd, 1);
-/*
-        struct sockaddr_in client_addr;
 
-        if ((sim.socket_fd = accept(socket_fd, (struct sockaddr *) &client_addr, &addrlen)) < 0) {
-            printf("Fatal: Error on socket accept.\n");
-            exit(-5);
-        }
-
-        FD_SET(sim.socket_fd, &rfds);
-
-        struct timeval t = {
-            .tv_sec = 0,
-            .tv_usec = 0
-        }; 
-
-        setsockopt(sim.socket_fd, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
-*/
-#endif
         sim.getchar = sim_socket_in;
         sim.putchar = sim_socket_out;
 
@@ -433,14 +336,9 @@ int main(int argc, char *argv[])
 
 
     if(args.port) {
-#ifdef WIN32
-        closesocket(socket_fd);
-        WSACleanup();
-#else
         if(sim.socket_fd)
             close(sim.socket_fd);
         close(socket_fd);
-#endif
     }
 
     platform_terminate();
