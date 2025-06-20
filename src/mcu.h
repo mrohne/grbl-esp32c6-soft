@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <time.h>
 
 #define MCU_N_TIMERS 3
 #define MCU_N_GPIO 10
@@ -54,6 +55,7 @@ typedef struct
     volatile bool enable;
     bool irq_enable;
     int fd;
+    struct timespec it;
 } mcu_timer_t;
 
 typedef struct

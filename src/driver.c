@@ -365,6 +365,7 @@ void settings_changed (settings_t *settings, settings_changed_flags_t changed)
 bool driver_setup (settings_t *settings)
 {
     mcu_register_irq_handler(Stepper_IRQHandler, Timer0_IRQ);
+    timer[STEPPER_TIMER].irq_enable = 1;
 
     gpio[STEPPER_ENABLE_PORT].dir.mask = AXES_BITMASK;
     gpio[STEP_PORT0].dir.mask = AXES_BITMASK;
@@ -424,7 +425,10 @@ bool driver_init ()
     mcu_reset();
 
     mcu_register_irq_handler(SysTick_Handler, Systick_IRQ);
+    systick_timer.irq_enable = 1;
+
     mcu_timer_set(&systick_timer, F_CPU / 1000 - 1);
+    mcu_timer_start(&systick_timer);
 
     hal.info = "Simulator";
     hal.driver_version = "250328";

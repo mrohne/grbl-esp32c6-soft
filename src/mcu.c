@@ -20,10 +20,12 @@
 
 */
 
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <sys/timerfd.h>
+#include <sys/select.h>
 
 #include "mcu.h"
 #include "simulator.h"
@@ -53,7 +55,7 @@ void mcu_reset (void)
         isr[i] = default_handler;
 
     memset(&systick_timer, 0, sizeof(mcu_timer_t));
-    systick_timer = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
+    systick_timer.fd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
 
     memset(&timer, 0, sizeof(mcu_timer_t) * MCU_N_TIMERS);
     for (i = 0; i < MCU_N_TIMERS; i++) 
@@ -83,29 +85,28 @@ void mcu_disable_interrupts (void)
 
 void mcu_timer_set(mcu_timer_t *timer, uint32_t load)
 {
-    struct itimerspec new_value;
-    memset(&new_value, 0, sizeof(new_value));
-    new_value.it_interval.tv_sec = load * (1.0e0 / F_CPU);
-    new_value.it_interval.tv_nsec = load * (1.0e9 / F_CPU);
-    timerfd_settime(timer->fd, 0, &new_value, NULL);
+    timer->it.tv_sec = load * (1.0e0 / F_CPU);
+    timer->it.tv_nsec = load * (1.0e9 / F_CPU);
 }
 
 void mcu_timer_start(mcu_timer_t *timer)
 {
-    struct itimerspec new_value;
-    timerfd_gettime(timer->fd, 0, &new_value);
-    new_value.it_value.tv_sec = new_value.it_interval.tv_sec;
-    new_value.it_value.tv_nsec = new_value.it_interval.tv_nsec;
+    struct itimerspec new_value = {
+        .it_interval = timer->it,
+        .it_value = timer->it
+    };
     timerfd_settime(timer->fd, 0, &new_value, NULL);
+    timer->enable = true;
 }
 
 void mcu_timer_stop(mcu_timer_t *timer)
 {
-    struct itimerspec new_value;
-    timerfd_gettime(timer->fd, 0, &new_value);
-    new_value.it_value.tv_sec = 0;
-    new_value.it_value.tv_nsec = 0;
+    struct itimerspec new_value = {
+        .it_interval = timer->it,
+        .it_value = {.tv_sec = 0, .tv_nsec = 0}
+    };
     timerfd_settime(timer->fd, 0, &new_value, NULL);
+    timer->enable = true;
 }
 
 void mcu_master_clock (void)
@@ -128,12 +129,14 @@ void mcu_master_clock (void)
         if (max_fd < timer[i].fd) max_fd = timer[i].fd;
     }
 
-
-    select(max_fd + 1, &read_fs, 0, 0, 0);
+    struct timespec timeout = {.tv_sec = 1, .tv_nsec = 0};
+    if (pselect(max_fd + 1, &read_fds, NULL, NULL, &timeout, NULL) < 0) 
+        perror("Error from pselect()");
 
     if (FD_ISSET(systick_timer.fd, &read_fds)) {
         uint64_t count;
-        read(systick_timer.fd,&count,sizeof(count));
+        if (read(systick_timer.fd,&count,sizeof(count)) < 0)
+            perror("Error from read()");
         if(systick_timer.irq_enable && irq_enable)
             isr[Systick_IRQ]();
     }
@@ -141,7 +144,8 @@ void mcu_master_clock (void)
     for (i = 0; i < MCU_N_TIMERS; i++) {
         if (FD_ISSET(timer[i].fd, &read_fds)) {
             uint64_t count;
-            read(timer[i].fd,&count,sizeof(count));
+            if (read(timer[i].fd,&count,sizeof(count)) < 0)
+                perror("Error from read()");
             if(timer[i].irq_enable && irq_enable)
                 isr[Timer0_IRQ + i]();
         }
